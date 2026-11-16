@@ -6,9 +6,8 @@ import json
 from pathlib import Path
 
 
-def compare_trials(locked, active, output):
-    """Write active-minus-locked differences in extrema, signed peaks and RMS."""
-    locked, active, output = map(Path, (locked, active, output))
+def validate_pair(locked, active):
+    """Require the same model and numerical settings before a comparison."""
     if locked.resolve() == active.resolve():
         raise ValueError("Supply two distinct analysis directories.")
     runs = [json.loads((folder / "analysis.json").read_text(encoding="utf-8"))
@@ -16,6 +15,12 @@ def compare_trials(locked, active, output):
     for field in ("model_sha256", "opensim_version", "motion_lowpass_hz", "excluded_model_forces"):
         if runs[0][field] != runs[1][field]:
             raise ValueError(f"Trial analyses differ in {field}.")
+
+
+def compare_trials(locked, active, output):
+    """Write active-minus-locked differences in extrema, signed peaks and RMS."""
+    locked, active, output = map(Path, (locked, active, output))
+    validate_pair(locked, active)
 
     summaries = []
     for folder in (locked, active):

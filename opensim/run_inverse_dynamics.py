@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 from xml.etree import ElementTree
 
+import numpy as np
 import opensim as osim
 
 
@@ -24,7 +25,7 @@ def read_series(path, minimum_rows):
     if not all(map(math.isfinite, time)) or any(b <= a for a, b in zip(time, time[1:])):
         raise ValueError(f"{path}: time must be finite and strictly increasing.")
     for label in labels:
-        if not all(map(math.isfinite, table.getDependentColumn(label).to_numpy())):
+        if not np.all(np.isfinite(table.getDependentColumn(label).to_numpy())):
             raise ValueError(f"{path}: non-finite samples in {label}.")
     return table, time
 
@@ -76,7 +77,7 @@ def write_summary(path, table, root_columns):
         for label in table.getColumnLabels():
             values = table.getDependentColumn(label).to_numpy()
             low, high = float(min(values)), float(max(values))
-            rms = math.sqrt(sum(float(value) ** 2 for value in values) / len(values))
+            rms = float(np.linalg.norm(values) / math.sqrt(len(values)))
             category = "ground_joint_residual" if label in root_columns else "joint_coordinate"
             writer.writerow((label, category, low, high, rms, max((low, high), key=abs)))
 
@@ -117,12 +118,32 @@ def run_trial(model_path, motion_path, loads_path, output, *, window=None, cutof
             raise ValueError("Cutoff must be below the motion sample Nyquist frequency.")
 
     forces = model.getForceSet()
-    excluded = osim.ArrayStr()
+    exclusions = set()
     for index in range(forces.getSize()):
         force = forces.get(index)
         if osim.ExternalForce.safeDownCast(force) is not None:
             raise ValueError("Use a wearer model without pre-attached external loads.")
-        excluded.append(force.getName())
+        if not force.get_appliesForce():
+            continue
+        if osim.Actuator.safeDownCast(force) is not None:
+            exclusions.add("actuators")
+        elif forces.getNumGroups() == 0:
+            if force.getName().lower() in {"all", "actuators", "muscles"}:
+                raise ValueError(f"Rename model force {force.getName()!r}; it shadows a tool keyword.")
+            exclusions.add(force.getName())
+        else:
+            # OpenSim searches only groups for individual names once groups exist.
+            memberships = osim.ArrayStr()
+            forces.getGroupNamesContaining(force.getName(), memberships)
+            groups = {memberships.get(i) for i in range(memberships.getSize())}
+            usable = sorted(group for group in groups
+                            if group.lower() not in {"all", "actuators", "muscles"})
+            if not usable:
+                raise ValueError(f"Disable or group model force {force.getName()!r} before analysis.")
+            exclusions.add(usable[0])
+    excluded = osim.ArrayStr()
+    for name in sorted(exclusions):
+        excluded.append(name)
 
     ground_coordinates = set()
     joints = model.getJointSet()
@@ -151,11 +172,21 @@ def run_trial(model_path, motion_path, loads_path, output, *, window=None, cutof
         raise RuntimeError("OpenSim inverse dynamics did not complete.")
 
     results, result_time = read_series(output_file, 2)
-    if len(result_time) != len(samples) or any(
-        not math.isclose(actual, expected, rel_tol=0, abs_tol=1e-8)
-        for actual, expected in zip(result_time, samples)
-    ):
-        raise RuntimeError("OpenSim output sample times differ from the requested motion samples.")
+    if cutoff_hz == -1:
+        if len(result_time) != len(samples) or not np.allclose(
+            result_time, samples, rtol=0, atol=1e-8
+        ):
+            raise RuntimeError("OpenSim output times differ from the selected motion samples.")
+    else:
+        # OpenSim pads and can resample motion during filtering, then selects
+        # the nearest preceding sample at each endpoint on the resulting grid.
+        max_step = max(b - a for a, b in zip(motion_time, motion_time[1:]))
+        precision = 1e-5 * max(1, motion_time[-1] - motion_time[0])
+        if (abs(result_time[0] - samples[0]) > max_step + precision
+                or abs(result_time[-1] - samples[-1]) > max_step + precision
+                or result_time[0] < load_time[0] - precision
+                or result_time[-1] > load_time[-1] + precision):
+            raise RuntimeError("Filtered output falls outside the expected load or motion window.")
     root_columns = {
         name + suffix for name in ground_coordinates for suffix in ("_force", "_moment")
     }

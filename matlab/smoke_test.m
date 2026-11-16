@@ -23,6 +23,22 @@ assert(numel(tradeoffs) == 54 && any([tradeoffs.within_sampled_travel_limits]) .
     && any(~[tradeoffs.within_sampled_travel_limits]));
 assert(any([tradeoffs.peak_reduction_N] > 0) && any([tradeoffs.peak_reduction_N] < 0));
 
+frequency = 2;
+response = suspension_frequency_response([0; frequency], 15, 1800, 65);
+assert(abs(response.force_transmissibility(1)-1) < 1e-12);
+time = (0:0.002:8).';
+forcing = cos(2*pi*frequency*time);
+dynamic = simulate_suspension(time, forcing, 15, 1800, 65);
+settled = time >= 6;
+prediction = real(response.travel_per_accel_s2(2)*exp(1i*2*pi*frequency*time));
+assert(max(abs(dynamic.travel_m(settled)-prediction(settled))) < 1e-6);
+trials = struct('time_s',time,'frame_accel_mps2',forcing,'analysis_start_s',6);
+[ranking, scenarios] = optimize_suspension(trials, [10 15], [900 1800], 65, ...
+    @(mass, stiffness, damping) [-0.02 0.02] + mass*9.80665/stiffness*[-0.01 0.01]);
+assert(numel(ranking) == 2 && isequal(size(scenarios), [2 2]));
+assert(all([ranking.all_within_sampled_stroke]) && ...
+    ranking(1).worst_peak_reduction_N >= ranking(2).worst_peak_reduction_N);
+
 prefixes = {'left_grf','right_grf','left_shoulder','right_shoulder','hip_belt'};
 bodies = {'calcn_l','calcn_r','torso','torso','pelvis'};
 t = (0:0.125:1).';

@@ -1,6 +1,7 @@
 """Run and check a synthetic locked/active pair through OpenSim."""
 
 import argparse
+import csv
 import math
 from pathlib import Path
 from xml.etree import ElementTree as xml
@@ -8,6 +9,7 @@ from xml.etree import ElementTree as xml
 import opensim as osim
 from numpy.testing import assert_allclose
 
+from compare_gait_cycles import compare_gait
 from compare_trials import compare_trials
 from run_inverse_dynamics import LOADS, run_trial
 
@@ -117,7 +119,22 @@ def main():
         locked = results["locked"].getDependentColumn(label).to_numpy()
         assert_allclose(active - locked, expected, atol=1e-8)
     report = compare_trials(output / "locked", output / "active", output / "comparison.csv")
-    print(f"Analytical force and moment checks passed. Comparison written to {report}.")
+    locked_events = output / "locked_heel_strikes.csv"
+    active_events = output / "active_heel_strikes.csv"
+    locked_events.write_text("side,time_s\nleft,0.2\nleft,0.45\nleft,0.7\n", encoding="ascii")
+    active_events.write_text("side,time_s\nleft,0.2\nleft,0.8\n", encoding="ascii")
+    gait = compare_gait(output / "locked", output / "active", locked_events, active_events,
+                        "left", ["knee_angle_l_moment", "lumbar_extension_moment"],
+                        output / "gait_comparison.csv")
+    with gait.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 202
+    for row in rows:
+        expected = -2 if row["column"] == "knee_angle_l_moment" else -4
+        assert_allclose(float(row["delta_mean"]), expected, atol=1e-8)
+        assert row["locked_strides"] == "2" and row["active_strides"] == "1"
+        assert row["active_stride_sd"] == ""
+    print(f"Analytical and gait comparison checks passed. Summary written to {report}.")
 
 
 if __name__ == "__main__":

@@ -52,3 +52,23 @@ export_opensim_loads('runs/trial_01', time, loads);
 Provide forces on the wearer and their lines of action before export. This step assumes clocks already have known offsets and negligible drift over the trial. Align clocks and address drift upstream when needed. Apply anti-alias filtering upstream before downsampling, and resolve foot assignment, contact timing, and force-plate centers of pressure before interpolation. For sensor-local vectors, apply time-varying sensor orientation and calibration upstream. The bridge applies its static transform to express the calibrated trial loads in OpenSim ground coordinates. A point is rotated and translated. Force and free-moment vectors are rotated.
 
 Point the trial's OpenSim inverse-dynamics setup at the generated `ExternalLoads.xml` and keep `trial_loads.mot` beside it. The pack simulation is a parallel hardware analysis. The OpenSim loads come from calibrated forces at the shoulder, belt, and feet. Use the matching wearer model, IK motion, and model body names, then check the force directions and dynamic residuals before interpreting joint moments.
+
+## Choose settings across the operating range
+
+```matlab
+trial(1) = struct('time_s', cal.time_s, ...
+    'frame_accel_mps2', cal.frame_accel_mps2, 'analysis_start_s', 1);
+trial(2) = struct('time_s', heldOut.time_s, ...
+    'frame_accel_mps2', heldOut.frame_accel_mps2, 'analysis_start_s', 1);
+[ranked, cases] = optimize_suspension(trial, [10 15 20], ...
+    [900 1200 1800], [40 65 100], [-0.045 0.05]);
+response = suspension_frequency_response(linspace(0, 5, 201), ...
+    15, ranked(1).stiffness_Npm, ranked(1).damping_Nspm);
+plot(response.frequency_Hz, response.force_transmissibility)
+```
+
+The numerical values above are examples. Use measured frame traces that span the intended motions and a candidate grid that includes hardware tolerances. The optimizer puts candidates passing the sampled stroke check for every trial and mass first, then sorts by the largest worst-case reduction in peak payload-on-frame force. A negative reduction means that at least one scenario amplifies the peak. If every candidate fails the stroke check, the ranking does not yield a usable design. Inspect the minimum stroke margin, worst trial, worst mass and per-case dynamic force RMS before choosing a setting. `cases` is indexed by `ranked(i).candidate` and mass index.
+
+A stroke callback `@(mass, stiffness, damping) ...` can return the measured limits relative to that candidate’s loaded equilibrium. Static sag consumes travel and can differ by mass, stiffness and preload. The check uses sampled extrema. Check the sensitivity to sample density and leave clearance for measurement error, fixture tolerances and unmodeled motion.
+
+The frequency response reports the ratio of the active dynamic force amplitude to the locked dynamic force amplitude for a sinusoidal frame acceleration. Ratios greater than one indicate amplification. The complex response describes steady-state behavior around loaded equilibrium. Use time-domain replay for transients and mixed excitations. [Foissac et al.](https://pubmed.ncbi.nlm.nih.gov/19062021/) and [Li et al.](https://pubmed.ncbi.nlm.nih.gov/27825599/) motivate testing across frequencies rather than tuning at one cadence.

@@ -28,15 +28,21 @@ for trial = 1:numel(trials)
                 summary(row).stiffness_Npm = stiffness;
                 summary(row).damping_Nspm = damping;
                 summary(row).natural_frequency_Hz = result.natural_frequency_Hz;
-                summary(row).active_peak_N = max(result.active_force_N(window));
-                summary(row).locked_peak_N = max(result.locked_force_N(window));
+                active = result.active_force_N(window);
+                locked = result.locked_force_N(window);
+                summary(row).active_peak_N = max(active);
+                summary(row).locked_peak_N = max(locked);
+                summary(row).active_dynamic_rms_N = std(active, 1);
+                summary(row).locked_dynamic_rms_N = std(locked, 1);
                 summary(row).peak_reduction_N = summary(row).locked_peak_N ...
                     - summary(row).active_peak_N;
                 summary(row).min_sampled_travel_m = min(result.travel_m);
                 summary(row).max_sampled_travel_m = max(result.travel_m);
+                summary(row).sampled_stroke_margin_m = min( ...
+                    summary(row).min_sampled_travel_m - travelLimits(1), ...
+                    travelLimits(2) - summary(row).max_sampled_travel_m);
                 summary(row).within_sampled_travel_limits = ...
-                    summary(row).min_sampled_travel_m >= travelLimits(1) ...
-                    && summary(row).max_sampled_travel_m <= travelLimits(2);
+                    summary(row).sampled_stroke_margin_m >= 0;
             end
         end
     end
