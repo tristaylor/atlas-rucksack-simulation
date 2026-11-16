@@ -1,5 +1,6 @@
 # Development and validation checklist
 
+- [x] Verify the synthetic OpenSim demo against known force and moment balances.
 - [ ] Verify the stock OpenSim gait workflow on the team's machines.
 - [ ] Fit suspension stiffness and damping from a bench trial. Validate predicted travel and force on a different input or payload.
 - [ ] Compare the locked and moving suspension with the same payload. Record pack fit, speed, suspension setting, and belt setting.

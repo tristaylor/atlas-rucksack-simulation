@@ -9,4 +9,4 @@ Generate or save the following files per trial once the model and dataset are av
 | ExternalLoads.xml | Exported load table, body names, force and point frames, and column prefixes |
 | Inverse dynamics setup | Scaled model, inverse kinematics motion, ExternalLoads.xml, matching time range, output moments |
 
-Check paths by opening one trial in the OpenSim GUI before adding batch automation.
+The [ATLAS inverse-dynamics runner](../README.md) validates the MATLAB handoff and generates the inverse-dynamics setup XML for each trial. Open that setup in the GUI to inspect the loads and motion.
